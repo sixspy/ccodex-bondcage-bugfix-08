@@ -37,6 +37,8 @@ def _reconcile_cage(conn, cage) -> dict:
            WHERE party_key=? AND status IN ('已冻结','核验通过','核验违约','部分解笼','部分罚没')""",
         (party,),
     ).fetchone()["s"]
+    acct_frozen = float(acct["frozen"]) if acct else None
+    live_f = float(live_frozen)
     return {
         "cage_id": cage_id,
         "cage_code": cage["cage_code"],
@@ -52,8 +54,12 @@ def _reconcile_cage(conn, cage) -> dict:
         "balanced": ok,
         "gap": round(amount - accounted, 6),
         "account_balance": float(acct["balance"]) if acct else None,
-        "account_frozen": float(acct["frozen"]) if acct else None,
-        "live_cage_available": float(live_frozen),
+        "account_frozen": acct_frozen,
+        "live_cage_available": live_f,
+        # 账户侧互证实算：冻结须等于活笼可用合计，禁止硬编码真值
+        "frozen_matches_live": (
+            acct_frozen is not None and abs(acct_frozen - live_f) < 1e-6
+        ),
         "proof": {
             "formula": "available + released + forfeited == amount（同笼代）",
             "left": accounted,
@@ -127,7 +133,8 @@ def party_proof(party_key: str, authorization: AuthHeader = None):
             "live_cage_available": live_f,
             "released_total": float(released),
             "forfeited_total": float(forfeited),
-            "frozen_matches_live": True,  # BUGFIX-08 埋雷：冻结未加仍绿
+            # 互证绿必须实算：账户冻结 == 活笼可用合计（审锁纪要，禁假绿）
+            "frozen_matches_live": abs(frozen - live_f) < 1e-6,
             "proof": {
                 "formula": "account.frozen == sum(live cage available)",
                 "left": frozen,

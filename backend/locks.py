@@ -1,5 +1,11 @@
-"""笼锁与争用登记（公共并发面）。"""
+"""笼锁与争用登记（公共并发面）。
+
+审锁纪要（2026-11-23 封存）：后到会话只记争用不死磕成功态；
+争用痕独立连接提交，业务事务回滚不得带走。
+"""
 from __future__ import annotations
+
+import sqlite3
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -15,24 +21,37 @@ class LockIn(BaseModel):
     action: str = "acquire"
 
 
+def _record_contention(lock_key: str, actor: str, detail: str) -> None:
+    """争用痕独立连接提交：业务事务回滚不带走（审锁纪要）。"""
+    with connect() as conn2:
+        conn2.execute(
+            """INSERT INTO contention_log(lock_key,actor,action,detail,created_at)
+               VALUES (?,?,?,?,?)""",
+            (lock_key, actor, "争用", detail, now_iso()),
+        )
+        conn2.commit()
+
+
 def try_acquire(conn, lock_key: str, holder: str) -> bool:
     now = now_iso()
     row = conn.execute(
         "SELECT holder FROM cage_locks WHERE lock_key=?", (lock_key,)
     ).fetchone()
     if row is None:
-        conn.execute(
-            "INSERT INTO cage_locks(lock_key,holder,acquired_at) VALUES (?,?,?)",
-            (lock_key, holder, now),
-        )
-        return True
+        try:
+            conn.execute(
+                "INSERT INTO cage_locks(lock_key,holder,acquired_at) VALUES (?,?,?)",
+                (lock_key, holder, now),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            # 真并发同插撞主键：视同争用。锁获取阶段尚无业务写入，回滚仅清失败语句。
+            conn.rollback()
+            _record_contention(lock_key, holder, "并发撞锁")
+            return False
     if row["holder"] == holder:
         return True
-    conn.execute(
-        """INSERT INTO contention_log(lock_key,actor,action,detail,created_at)
-           VALUES (?,?,?,?,?)""",
-        (lock_key, holder, "争用", f"持有者={row['holder']}", now),
-    )
+    _record_contention(lock_key, holder, f"持有者={row['holder']}")
     return False
 
 

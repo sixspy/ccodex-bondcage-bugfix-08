@@ -46,7 +46,7 @@ export const bondsViewTemplate = `
       <h3>账户一览</h3>
       <table>
         <thead>
-          <tr><th>键</th><th>名称</th><th>余额</th><th>冻结</th><th>可用</th><th>状态</th></tr>
+          <tr><th>键</th><th>名称</th><th>余额</th><th>冻结</th><th>可用</th><th>活笼冻结</th><th>互证</th><th>状态</th></tr>
         </thead>
         <tbody>
           <tr v-for="b in bonds" :key="b.id" @click="loadBondDetail(b.party_key)" style="cursor:pointer">
@@ -55,6 +55,12 @@ export const bondsViewTemplate = `
             <td>{{ fmt(b.balance) }}</td>
             <td>{{ fmt(b.frozen) }}</td>
             <td>{{ fmt(b.balance - b.frozen) }}</td>
+            <td>{{ fmt(b.live_cage_available) }}</td>
+            <td>
+              <span class="badge" :class="b.frozen_matches_live ? 'pass' : 'fail'">
+                {{ b.frozen_matches_live ? '符' : '违' }}
+              </span>
+            </td>
             <td><span class="badge frozen">{{ b.status }}</span></td>
           </tr>
         </tbody>
@@ -62,6 +68,13 @@ export const bondsViewTemplate = `
       <div v-if="bondDetail" style="margin-top:12px">
         <h3>明细 · {{ bondDetail.account.party_key }}</h3>
         <p class="hint">入金流水 {{ bondDetail.deposits.length }} 条 · 关联笼 {{ bondDetail.cages.length }} 只</p>
+        <p class="hint">
+          冻结互证：账户冻结 {{ fmt(bondDetail.account.frozen) }}
+          vs 活笼合计 {{ fmt(bondDetail.live_cage_available) }}
+          <span class="badge" :class="bondDetail.frozen_matches_live ? 'pass' : 'fail'">
+            {{ bondDetail.frozen_matches_live ? '符' : '违' }}
+          </span>
+        </p>
         <table>
           <thead><tr><th>入金</th><th>备注</th><th>时间</th><th>操作者</th></tr></thead>
           <tbody>

@@ -131,6 +131,10 @@ createApp({
     const frozenCages = computed(() =>
       cages.value.filter((c) => c.status === "已冻结")
     );
+    const freezeBond = computed(() =>
+      bonds.value.find((b) => b.party_key === freezeForm.value.party_key) || null
+    );
+    const freezeProof = ref(null);
     const passCages = computed(() =>
       cages.value.filter(
         (c) => c.status === "核验通过" || c.status === "部分解笼"
@@ -277,12 +281,15 @@ createApp({
 
     async function freezeCage() {
       clearFlash();
+      freezeProof.value = null;
       try {
         const payload = { ...freezeForm.value };
         if (!payload.cage_code) delete payload.cage_code;
         const row = await api.freeze(payload);
-        flashOk(`入笼成功 ${row.cage_code}`);
         await refresh();
+        // 入笼后核账：冻结须与活笼合计同增，互证条直显结果
+        freezeProof.value = await api.proof(row.party_key);
+        flashOk(`入笼成功 ${row.cage_code}，账户冻结已同抬`);
         await selectCage(row);
       } catch (e) {
         flashErr(e);
@@ -426,6 +433,8 @@ createApp({
       topupForm,
       splitForm,
       frozenCages,
+      freezeBond,
+      freezeProof,
       passCages,
       failCages,
       login,

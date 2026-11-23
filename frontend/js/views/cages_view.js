@@ -33,6 +33,21 @@ export const cagesViewTemplate = `
         <button @click="freezeCage">入笼冻结</button>
         <button class="secondary" @click="refresh">刷新</button>
       </div>
+      <div class="hint" v-if="freezeBond" style="margin-top:10px">
+        账户 {{ freezeBond.party_key }}：余额 {{ fmt(freezeBond.balance) }}
+        · 已冻结 {{ fmt(freezeBond.frozen) }}
+        · 可入笼 {{ fmt(freezeBond.balance - freezeBond.frozen) }}
+        <span class="badge" :class="freezeBond.frozen_matches_live ? 'pass' : 'fail'">
+          {{ freezeBond.frozen_matches_live ? '冻笼互证符' : '冻笼互证违' }}
+        </span>
+      </div>
+      <div class="hint" v-if="freezeProof" style="margin-top:6px">
+        本次入笼后互证：账户冻结 {{ fmt(freezeProof.account.frozen) }}
+        = 活笼合计 {{ fmt(freezeProof.live_cage_available) }}
+        <span class="badge" :class="freezeProof.frozen_matches_live ? 'pass' : 'fail'">
+          {{ freezeProof.frozen_matches_live ? '冻结已同抬' : '冻结未同步' }}
+        </span>
+      </div>
     </div>
     <div>
       <div class="cage-cards">

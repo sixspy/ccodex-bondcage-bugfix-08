@@ -1,4 +1,7 @@
-"""保证金账户：开户、入金、查询。"""
+"""保证金账户：开户、入金、查询。
+
+账户侧互证：frozen 须等于活笼可用合计（审锁纪要 2026-11-23 封存）。
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
@@ -10,6 +13,18 @@ from models import BondOpenIn, DepositIn
 
 router = APIRouter(tags=["bonds"])
 
+_LIVE_STATUSES = "('已冻结','核验通过','核验违约','部分解笼','部分罚没')"
+
+
+def _live_cage_available(conn, party_key: str) -> float:
+    return float(
+        conn.execute(
+            f"""SELECT COALESCE(SUM(available),0) s FROM cages
+                WHERE party_key=? AND status IN {_LIVE_STATUSES}""",
+            (party_key,),
+        ).fetchone()["s"]
+    )
+
 
 @router.get("/api/bonds")
 def list_bonds(authorization: AuthHeader = None):
@@ -18,7 +33,14 @@ def list_bonds(authorization: AuthHeader = None):
         rows = conn.execute(
             """SELECT * FROM bond_accounts ORDER BY id"""
         ).fetchall()
-        return {"items": [dict(r) for r in rows]}
+        items = []
+        for r in rows:
+            d = dict(r)
+            live = _live_cage_available(conn, d["party_key"])
+            d["live_cage_available"] = live
+            d["frozen_matches_live"] = abs(float(d["frozen"]) - live) < 1e-6
+            items.append(d)
+        return {"items": items}
 
 
 @router.get("/api/bonds/{party_key}")
@@ -39,10 +61,13 @@ def get_bond(party_key: str, authorization: AuthHeader = None):
                FROM cages WHERE party_key=? ORDER BY id DESC""",
             (party_key,),
         ).fetchall()
+        live = _live_cage_available(conn, party_key)
         return {
             "account": dict(row),
             "deposits": [dict(d) for d in deposits],
             "cages": [dict(c) for c in cages],
+            "live_cage_available": live,
+            "frozen_matches_live": abs(float(row["frozen"]) - live) < 1e-6,
         }
 
 
